@@ -32,11 +32,6 @@ class Flatten extends Reducer {
 }
 const flatten = new Flatten();
 
-
-log("==============");
-log("== Bindable ==");
-log("==============");
-
 class Mappable {
   mapf(f) { return undefined; } // abstract
 
@@ -265,3 +260,49 @@ const threecoins = coin.bind(x =>
 //log( threecoins );
 const twoheadsfromthreecoins = Prob(threecoins.x.filter(x => x.t == 2))
 //log( twoheadsfromthreecoins );
+
+
+log("-----------------");
+log("-- Array Class --");
+log("-----------------");
+
+class _Array_ {
+  constructor(x) { this.x = x; } // expecting a normal javascript array
+  toString() { return this.x.toString(); }
+
+  mapf(f) { return Array_(this.x.map(x => f(x))); } // must explicitly apply just one argument
+
+  static pure(x) { return Array_([x]); }
+}
+const Array_ = x => new _Array_(x);
+
+//log(Array_([1, 2]).mapf(add3));
+const f = ((x, y) => `${x} + ${y} = ${x + y}`).$
+//log(f(1, 2));
+//log(Array_([f(1), f(2)]).mapf(f1 => f1(0)));
+const myArray = Array_([1, 2]);
+//log(mapf(g => g(3), mapf(f, myArray)));
+
+
+//Array.prototype.snoc = function(x) { return [x].concat(this); }
+//const cons = (x, xs) => [x].concat(xs);
+//log([1, 2, 3].snoc(0));
+//log(cons(0, [1, 2, 3]));
+
+
+log("----------------");
+log("-- List Class --");
+log("----------------");
+
+const [NIL, CONS] = [0, 1];
+class _List {
+  constructor(tag, h, r) { this.tag = tag; this.h = h; this.r = r; }
+  toString() { return this.tag === NIL? "[]" : `${this.h}:${this.r}`; }
+
+  mapf(f) { return this.tag === NIL? this : L_(f(this.h), this.r.mapf(f)); }
+}
+const L$ = new _List(NIL);
+const L_ = (x, xs) => new _List(CONS, x, xs);
+
+//log( L_(10, L_(20, L$)) );
+//log( L_(10, L_(20, L$)).mapf(add3) );
