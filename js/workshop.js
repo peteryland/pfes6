@@ -33,9 +33,9 @@ class Flatten extends Reducer {
 const flatten = new Flatten();
 
 
-log("================");
-log("== Applicable ==");
-log("================");
+log("==============");
+log("== Bindable ==");
+log("==============");
 
 class Mappable {
   mapf(f) { return undefined; } // abstract
@@ -45,8 +45,9 @@ class Mappable {
 const mapf = ((f, x) => x.mapf(f)).$;   // Helper function to allow use of mapf(f, x)
 
 class Applicable extends Mappable {
-  // pure :: a -> f a
-  // ap :: f (a -> b) -> f a -> f b
+  static pure(x) { return undefined; } // abstract - Wrap a value
+  ap(x) { return undefined; } // abstract - Apply a wrapped function to a wrapped value
+
   seqf(x) { return this.mapreplaceby(id).ap(x); }
   seqfL(x) { return liftA2(constant, this, x); }
   pure(x) { return this.constructor.pure(x); }
@@ -55,12 +56,33 @@ const liftA  = ((f, x)       => pure(f).ap(x)).$;
 const liftA2 = ((f, x, y)    => mapf(f.$, x).ap(y)).$;
 const liftA3 = ((f, x, y, z) => mapf(f.$, x).ap(y).ap(z)).$;
 
+class Bindable extends Applicable {
+  bind(f) { return undefined; } // abstract - Apply a function that returns a wrapped value(s) to a wrapped value(s)
+
+  seqm(x) { return this.bind(constant(x)); }
+  join() { return this.bind(id); }
+  ret(x) { return this.constructor.pure(x); }
+}
+const bind     = ((f, x) => x.bind(f)).$;  // Helper function to allow use of bind(f, x)
+const when     = ((b, x) => b? x : x.constructor.pure(undefined)).$;
+const sequence = (xs) => mapM(id, xs);
+// const foldr = ((f, a, [x, ...xs]) => xs.length === 0? f(x, a) : foldr(f, f(x, a), xs)).$;
+// const mapM$k   = (pure, a, r) => f(a).bind(x =>              // x <- f a
+//                                   r.bind(xs =>               // xs <- r
+//                                   pure([x, ...xs])));        // return (x:xs)
+// const mapM     = (f, as) => foldr(mapM$k(as[0].pure.$), as[0].pure([]), as);
+const mapM = (f, xs) => xs.reduce(
+  (acc, x) => (f(x)).bind(y =>             // y  <- f(x)
+              acc.bind(ys =>               // ys <- acc
+              xs[0].pure(ys.concat(y)))),  // return ys ++ y
+  xs[0].pure([])); // won't work on []
+
 
 log("--------------------");
 log("-- Identity Class --");
 log("--------------------");
 
-class _Id extends Applicable {
+class _Id extends Bindable {
   constructor(value) { super(); this.value = value; }
   toString() { return `Id(${this.value})`; }
 
@@ -68,13 +90,18 @@ class _Id extends Applicable {
 
   ap(x) { return Id(this.value(x.value)); }
   static pure(x) { return Id(x); }
+
+  bind(f) { return f(this.value); }
 }
-const Id = x => new _Id(x); // functional-style constructor
+const Id = x => new _Id(x);
 
 const myid = Id(42);
 const myid2 = mapf(x => x+1, myid);
+//log( myid2 );
 const myid3 = Id(x => x*3).ap(myid);
-//log( myid3 );
+const myid4 = myid2.bind(x =>
+              Id(`${x} times ${x} is ${x*x}`));
+//log( myid4 );
 
 
 log("-----------------");
@@ -82,7 +109,7 @@ log("-- Maybe Class --");
 log("-----------------");
 
 const [NOTHING, JUST] = [0, 1]
-class _Maybe extends Applicable {
+class _Maybe extends Bindable {
   constructor(tag, value) { super(); this.tag = tag; this.value = value; }
   toString() { return this.tag === NOTHING? "Nothing()" : `Just(${this.value})`}
 
@@ -90,8 +117,10 @@ class _Maybe extends Applicable {
 
   ap(x) { return this.tag === NOTHING? this : mapf(this.value, x); }
   static pure(x) { return Just(x); }
+
+  bind(f) { return this.tag === NOTHING? this : f(this.value); }
 }
-const Nothing = () => new _Maybe(NOTHING); // functional-style constructors
+const Nothing = () => new _Maybe(NOTHING);
 const Just = x => new _Maybe(JUST, x);
 
 class MaybeReducer extends Reducer {
@@ -152,19 +181,55 @@ const justadd = Just(add2);
 //log( justadd.ap(somenum).ap(nothing) );
 //log( justadd.ap(nothing) );
 
+//log( bind(bigfun2, nothing) );
+//log( bind(bigfun2, Just(77)) );
+//log( bigfun2(77).bind(bigfun2) );
+//log( bigfun2("hello").bind(bigfun2) );
+
+//log( somenum.seqf(something) );
+//log( somenum.seqfL(something) );
+//log( something.seqf(somenum) );
+//log( something.seqfL(somenum) );
+//log( nothing.seqf(something) );
+//log( something.seqf(nothing) );
+//log( nothing.seqfL(something) );
+//log( something.seqfL(nothing) );
+//log( nothing.seqf(nothing) );
+//log( nothing.seqfL(nothing) );
+
+//log( _Maybe.pure(21).bind(bigfun2) );
+//log( Just(100).bind(_Maybe.pure) );
+//log( Just(200).seqm(Just(100)) );
+//log( Just(Just("foo")).join() );
+//log( nothing.join() );
+//log( Just(nothing).join() );
+
+//log( when(true, Just(77)) );
+//log( when(false, Just(77)) );
+
+//log( sequence([Just(3), Just("hello"), Just(1000)]) );
+//log( sequence([Just(3), nothing, Just("hello"), Just(1000)]) );
+
 
 log("-----------------------");
 log("-- Probability Class --");
 log("-----------------------");
 
-class _Prob extends Applicable {
+function flatten_probs(xs) {
+  const ys = xs.reduce(function(rv, x) { rv[x.t] = rv[x.t]? { t: x.t, p: rv[x.t].p + x.p } : x; return rv; }, {});
+  return Object.keys(ys).map(key => ys[key]);
+}
+
+class _Prob extends Bindable {
   constructor(x) { super(); this.x = x; } // expecting an array of {t: name, p: probability}
   toString() { return `Prob([${this.x.map(y => "{t: " + y.t.toString() + ", p: " + y.p + "}\n     ")}])`; }
 
-  mapf(f) { return Prob(this.x.map(y => ({t: f(y.t), p: y.p}))); }
+  mapf(f) { return Prob(this.x.map(({t, p}) => ({t:f(t), p}))); }
 
-  ap(z) { return Prob([].concat(...this.x.map(y => z.mapf(y.t).x.map(w => ({t: w.t, p: y.p * w.p}))))); }
-  static pure(x) { return Prob([{t: x, p: 1}]); }
+  ap(z) { return Prob(flatten_probs([].concat(...this.x.map(({t:t1, p:p1}) => z.mapf(t1).x.map(({t, p}) => ({t, p: p1 * p})))))); }
+  static pure(t) { return Prob([{t, p:1}]); }
+
+  bind(f) { return Prob(flatten_probs([].concat(...this.x.map(({t:t1, p:p1}) => f(t1).x.map(({t, p}) => ({t, p: p1 * p})))))); }
 }
 const Prob = x => new _Prob(x);
 
@@ -174,7 +239,6 @@ const coin = Prob([{t: "Heads", p: 0.5}, {t: "Tails", p: 0.5}]);
 const loadedcoin = Prob([{t: "Heads", p: 0.6}, {t: "Tails", p: 0.4}]);
 
 const rev = s => s.split('').reverse().join(''); // reverse a string
-//log( coin.mapf(rev) );
 
 const myfs = Prob([{t: rev, p: 0.8}, {t: x => x.toUpperCase(), p: 0.2}]);
 const myprob1 = myfs.ap(coin);
@@ -191,3 +255,13 @@ const liftedAdd3 = liftA3((x,y,z) => x + "/" + y + "/" + z)
 //log( liftedAdd3(coin)(loadedcoin)(coin) );
 
 //log( myprob1.mapf(add2).ap(coin) );
+
+const countHeads = (...xs) => xs.filter(x => x === "Heads").length;
+
+const threecoins = coin.bind(x =>
+                   loadedcoin.bind(y =>
+                   coin.bind(z =>
+                   _Prob.pure(countHeads(x, y, z)))));
+//log( threecoins );
+const twoheadsfromthreecoins = Prob(threecoins.x.filter(x => x.t == 2))
+//log( twoheadsfromthreecoins );
