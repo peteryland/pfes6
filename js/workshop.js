@@ -32,18 +32,38 @@ class Flatten extends Reducer {
 const flatten = new Flatten();
 
 
+log("==============");
+log("== Mappable ==");
+log("==============");
+
+// we introduce a type class for "Mappables"
+// we expect this class to be extended by a class that wraps values somehow
+// to be considered a Mappable, it must implement `mapf`
+class Mappable {
+// `mapf` uses the given function f to map the wrapped value(s) to f(value)
+  mapf(f) { return undefined; } // abstract
+
+  mapreplaceby(x) { return this.mapf(constant(x)); }
+}
+const mapf = ((f, x) => x.mapf(f)).$;   // Helper function to allow use of mapf(f, x)
+
+
 log("--------------------");
 log("-- Identity Class --");
 log("--------------------");
 
-class _Id {
-  constructor(value) { this.value = value; }
-  toString() { return `Id(${this.value})`}
-}
-const Id = x => new _Id(x); // functional-style constructor
+class _Id extends Mappable {
+  constructor(value) { super(); this.value = value; }
+  toString() { return `Id(${this.value})`; }
 
-const myid = Id(42); // example instance
-//log( myid );
+// here, `mapf` returns a new `Id` object which wraps `f(value)`
+  mapf(f) { return Id(f(this.value)); }
+}
+const Id = x => new _Id(x);
+
+const myid = Id(42);
+const myid2 = mapf(x => x+1, myid);
+//log( myid2 );
 
 
 log("-----------------");
@@ -51,25 +71,21 @@ log("-- Maybe Class --");
 log("-----------------");
 
 const [NOTHING, JUST] = [0, 1]
-class _Maybe {
-  constructor(tag, value) { this.tag = tag; this.value = value; }
+class _Maybe extends Mappable {
+  constructor(tag, value) { super(); this.tag = tag; this.value = value; }
   toString() { return this.tag === NOTHING? "Nothing()" : `Just(${this.value})`}
+
+// this time, we only call the function if a value is indeed wrapped
+  mapf(f) { return this.tag === NOTHING? this : Just(f(this.value)); }
 }
 const Nothing = () => new _Maybe(NOTHING); // functional-style constructors
 const Just = x => new _Maybe(JUST, x);
-
-const mymaybe = Just(7);
-//log( mymaybe );
-const mynothing = Nothing();
-//log( mynothing );
 
 class MaybeReducer extends Reducer {
   get unit() { return Nothing; }
   op(me, a, b) { return a.tag === JUST? a : b; }
 }
 const maybereducer = new MaybeReducer();
-
-//log( maybereducer.rreduce([Nothing(), Just(4), Just(5), Nothing()]) );
 
 class MaybeReducer2 extends Reducer {
   constructor(parentreducer) { super(); this.parentop = parentreducer.op; }
@@ -78,20 +94,46 @@ class MaybeReducer2 extends Reducer {
 }
 const maybesumreducer = new MaybeReducer2(sum);
 
-//log( maybesumreducer.rreduce([Nothing(), Just(4), Just(5), Nothing()]) );
+const myjustval = Just(7);
+const mynothing = Nothing();
+
+const add3 = x => 3 + x;
+//log( mapf(add3, myjustval) );
+//log( mapf(add3, mynothing) );
+
+// an example function with a failure case
+function bigfun(x) {
+  const y = x * 2 + 200;
+  if (isNaN(y))
+    return "I'm sorry, I can't do that.";
+  return y;
+}
+
+// the failure case doesn't always work as expected
+//log( bigfun(1001) );
+//log( bigfun("hello") );
+//log( bigfun(null) );
+
+// using `Maybe` and `mapf` we can avoid a lot of hard-to-find bugs
+//log( mapf(bigfun, Just(1001)) );
+//log( mapf(bigfun, Just("hello")) );
+//log( mapf(bigfun, Nothing()) );
+
 
 log("-----------------------");
 log("-- Probability Class --");
 log("-----------------------");
 
-class _Prob {
-  constructor(x) { this.x = x; } // expecting an array of {t: name, p: probability}
-  toString() { return `Prob([${this.x.map(y => "{t: " + y.t.toString() + ", p: " + y.p + "}\n     ")}])`; }
+class _Prob extends Mappable {
+  constructor(x) { super(); this.x = x; } // expecting an array of {t: name, p: probability}
+  toString() { return `Prob([${this.x.map(y => "{t: " + y.t.toString() + ", p: " + y.p.toString() + "}")}])`; }
+
+  mapf(f) { return Prob(this.x.map(y => ({t: f(y.t), p: y.p}))); }
 }
 const Prob = x => new _Prob(x);
 
 const coin = Prob([{t: "Heads", p: 0.5}, {t: "Tails", p: 0.5}]);
-//log( coin );
-
 const loadedcoin = Prob([{t: "Heads", p: 0.6}, {t: "Tails", p: 0.4}]);
-//log( loadedcoin );
+
+const rev = s => s.split('').reverse().join(''); // reverse a string
+//log( coin.mapf(rev) );
