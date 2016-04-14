@@ -94,9 +94,13 @@ const myid = Id(42);
 const myid2 = mapf(x => x+1, myid);
 //log( myid2 );
 const myid3 = Id(x => x*3).ap(myid);
-const myid4 = myid2.bind(x =>
+const myid4 = myid2.bind(x =>                    // think of this as binding the name "x" to the value inside myid2
               Id(`${x} times ${x} is ${x*x}`));
 //log( myid4 );
+const myid5 = myid.bind(x =>                    // think of this as binding the name "x" to the value inside myid
+              myid2.bind(y =>                   // and now we also bind the name "y" to the value inside myid2
+              Id(`${x} times ${y} is ${x*y}`)));
+//log( myid5 );
 
 
 log("-----------------");
@@ -260,6 +264,39 @@ const threecoins = coin.bind(x =>
 //log( threecoins );
 const twoheadsfromthreecoins = Prob(threecoins.x.filter(x => x.t == 2))
 //log( twoheadsfromthreecoins );
+
+
+log("------------------");
+log("-- Either Class --");
+log("------------------");
+
+const [LEFT, RIGHT] = [0, 1]
+class _Either extends Bindable {
+  constructor(tag, value) { super(); this.tag = tag; this.value = value; }
+  toString() { return this.tag === LEFT? `Left(${this.value})` : `Right(${this.value})`}
+
+  mapf(f) { return this.tag === LEFT? Left(f(this.value)) : this; }
+
+  ap(x) { return this.tag === LEFT? mapf(this.value, x) : this; }
+  static pure(x) { return Left(x); }
+
+  bind(f) { return this.tag === LEFT? f(this.value) : this; }
+}
+const Left = x => new _Either(LEFT, x);
+const Right = x => new _Either(RIGHT, x);
+
+const myval = Left(3);
+const myzero = Left(0);
+const myerr = Right("earlier error");
+
+const fn = (x => x === 0? Right("can't divide by zero") : Left(3/x));
+
+const mybindf = val => val.bind(x => // think of this as bind the name "x" to the value inside val
+                       fn(x));
+
+//log( mybindf(myval) );
+//log( mybindf(myzero) );
+//log( mybindf(myerr) );
 
 
 log("-----------------");
